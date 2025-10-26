@@ -12,8 +12,10 @@ permissions:
   id-token: write
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      project-name: ${{ steps.extract-names.outputs.project-name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +30,7 @@ jobs:
         run: npm ci
 
       - name: Extract repo and Angular project names
+        id: extract-names
         shell: bash
         run: |
           # REPO_NAME becomes only the repo part of owner/repo
@@ -35,6 +38,7 @@ jobs:
           # PROJECT_NAME is the first project key in angular.json (matches angular.json structure)
           PROJECT_NAME=$(node -e "console.log(Object.keys(require('./angular.json').projects)[0])")
           echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+          echo "project-name=$PROJECT_NAME" >> $GITHUB_OUTPUT
           echo "Detected PROJECT_NAME=$PROJECT_NAME"
           echo "Detected REPO_NAME=${GITHUB_REPOSITORY#*/}"
 
@@ -46,9 +50,21 @@ jobs:
           # Build production output; base-href ensures assets are resolved for repo-hosted pages
           npm run build -- --configuration production --project "$PROJECT_NAME" --base-href "/$REPO_NAME/"
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist/${{ env.PROJECT_NAME }}
-          publish_branch: gh-pages
+          path: ./dist/${{ steps.extract-names.outputs.project-name }}
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
